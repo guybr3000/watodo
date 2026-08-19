@@ -1,0 +1,7 @@
+# Watodo Project Guidelines & Instructions
+
+## Development & Runtime Rules
+- **Always restart frontend and backend** when making changes or when requested.
+- Development servers are run via:
+  - `npm run dev` (runs both backend on port 3001 and Vite UI on port 5173 concurrently).
+- Ensure backend (`tsx watch src/server.ts`) and frontend (`vite --config vite.config.ts`) are active after any changes so the user's environment is always up-to-date and live.

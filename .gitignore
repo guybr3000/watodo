@@ -1,0 +1,34 @@
+# Node dependencies & builds
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# WhatsApp authentication session credentials (NEVER commit)
+auth_info_baileys/
+*.auth/
+
+# Local temporary archives & logs
+chat_export_temp/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local runtime settings — written by the app, contains API keys & machine paths
+config.json
+
+# Personal knowledge base (your own ingested notes & media — keep local)
+inbox/
+
+# WhatsApp chat exports
+*.zip

@@ -1,0 +1,7 @@
+{
+  "targetChatName": "To Do",
+  "outputDir": "./inbox",
+  "geminiApiKey": "",
+  "githubToken": "",
+  "port": 3001
+}
