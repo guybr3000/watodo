@@ -1,12 +1,15 @@
 import React from 'react';
 import { StatusData } from '../types';
-import { QrCodeIcon, FolderArchiveIcon, SettingsIcon, SunIcon, MoonIcon } from './Icons';
+import { QrCodeIcon, FolderArchiveIcon, SettingsIcon, SunIcon, MoonIcon, RefreshIcon } from './Icons';
 
 interface Props {
   status: StatusData | null;
   theme: 'dark' | 'light';
+  reconnecting: boolean;
   onToggleTheme: () => void;
   onOpenQr: () => void;
+  onReconnect: () => void;
+  onRepair: () => void;
   onOpenImport: () => void;
   onOpenSettings: () => void;
 }
@@ -14,8 +17,11 @@ interface Props {
 export const StatusHeader: React.FC<Props> = ({
   status,
   theme,
+  reconnecting,
   onToggleTheme,
   onOpenQr,
+  onReconnect,
+  onRepair,
   onOpenImport,
   onOpenSettings
 }) => {
@@ -29,6 +35,11 @@ export const StatusHeader: React.FC<Props> = ({
       ? 'Connecting...'
       : 'Disconnected';
 
+  // A dropped or logged-out listener needs a way back that does not involve restarting
+  // the server, and 'connecting' is included so a stalled handshake can be forced too.
+  const showReconnect = waStatus === 'disconnected' || waStatus === 'connecting';
+  const disconnectReason = status?.whatsapp.lastDisconnectReason;
+
   return (
     <header className="header">
       <div className="logo-area">
@@ -37,7 +48,10 @@ export const StatusHeader: React.FC<Props> = ({
       </div>
 
       <div className="header-status">
-        <div className="status-badge">
+        <div
+          className="status-badge"
+          title={waStatus !== 'connected' && disconnectReason ? disconnectReason : statusLabel}
+        >
           <span className={`status-dot ${waStatus}`} />
           <span>{statusLabel}</span>
         </div>
@@ -47,6 +61,30 @@ export const StatusHeader: React.FC<Props> = ({
             <QrCodeIcon size={16} />
             <span>Pair WhatsApp</span>
           </button>
+        )}
+
+        {showReconnect && (
+          <>
+            <button
+              className="btn btn-primary"
+              onClick={onReconnect}
+              disabled={reconnecting}
+              title="Restart the WhatsApp listener using the saved session"
+            >
+              <RefreshIcon size={16} />
+              <span>{reconnecting ? 'Reconnecting...' : 'Reconnect'}</span>
+            </button>
+
+            <button
+              className="btn btn-secondary"
+              onClick={onRepair}
+              disabled={reconnecting}
+              title="Clear the saved WhatsApp session and pair again with a new QR code"
+            >
+              <QrCodeIcon size={16} />
+              <span>New QR</span>
+            </button>
+          </>
         )}
 
         <button className="btn btn-secondary" onClick={onOpenImport} title="Import exported WhatsApp chat ZIP">

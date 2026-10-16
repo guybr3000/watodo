@@ -13,6 +13,7 @@ export interface StatusData {
     qrDataUrl: string | null;
     targetChatName: string;
     targetJid: string | null;
+    lastDisconnectReason?: string | null;
   };
   totalItems: number;
   config: {

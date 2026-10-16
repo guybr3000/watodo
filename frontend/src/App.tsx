@@ -20,6 +20,8 @@ export const App: React.FC = () => {
     return (localStorage.getItem('watodo_theme') as 'dark' | 'light') || 'dark';
   });
 
+  const [reconnecting, setReconnecting] = useState(false);
+
   const [showQrModal, setShowQrModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -59,6 +61,37 @@ export const App: React.FC = () => {
     } catch {}
   };
 
+  // Restart the WhatsApp listener. `reset` clears the stored session, which is the way
+  // back when the phone has unlinked this device and the saved credentials are dead.
+  const requestReconnect = async (reset: boolean) => {
+    if (reconnecting) return;
+    if (
+      reset &&
+      !window.confirm(
+        'Clear the saved WhatsApp session? You will need to scan a new QR code to link this device again.'
+      )
+    ) {
+      return;
+    }
+
+    setReconnecting(true);
+    try {
+      const res = await fetch('/api/whatsapp/reconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reset })
+      });
+      if (res.ok && reset) {
+        // A reset always ends in a pairing QR code, so show it as soon as it arrives.
+        setShowQrModal(true);
+      }
+    } catch {
+    } finally {
+      setReconnecting(false);
+      fetchStatus();
+    }
+  };
+
   useEffect(() => {
     fetchStatus();
     fetchKbItems();
@@ -77,6 +110,11 @@ export const App: React.FC = () => {
           setEvents(prev => [...prev, data.event]);
           if (data.event.stage === 'storage') {
             fetchKbItems();
+            fetchStatus();
+          } else if (
+            data.event.details?.qrDataUrl ||
+            (data.event.stage === 'listener' && data.event.type !== 'info')
+          ) {
             fetchStatus();
           }
         }
@@ -99,8 +137,11 @@ export const App: React.FC = () => {
       <StatusHeader
         status={status}
         theme={theme}
+        reconnecting={reconnecting}
         onToggleTheme={toggleTheme}
         onOpenQr={() => setShowQrModal(true)}
+        onReconnect={() => requestReconnect(false)}
+        onRepair={() => requestReconnect(true)}
         onOpenImport={() => setShowImportModal(true)}
         onOpenSettings={() => setShowSettingsModal(true)}
       />

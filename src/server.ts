@@ -6,6 +6,7 @@ import { config, updateRuntimeConfig, persistEnvConfig } from './config.js';
 import { eventStream } from './sse/eventStream.js';
 import {
   initWhatsAppClient,
+  reconnectWhatsApp,
   getWhatsAppState,
   resetWhatsAppTargetChat,
   deleteWhatsAppMessage
@@ -78,6 +79,32 @@ app.get('/api/settings', (req, res) => {
 app.get('/api/qr', (req, res) => {
   const waState = getWhatsAppState();
   res.json({ qrDataUrl: waState.qrDataUrl, status: waState.status });
+});
+
+// 2b. Reconnect / re-pair WhatsApp endpoint
+// `reset: true` clears the stored credentials so WhatsApp issues a fresh pairing QR
+// code. Without it the saved session is reused, which restores a dropped connection
+// without making the user scan anything.
+app.post('/api/whatsapp/reconnect', async (req, res) => {
+  const reset = Boolean(req.body?.reset);
+
+  try {
+    const result = await reconnectWhatsApp({ reset });
+    res.json({
+      message: reset
+        ? 'Stored WhatsApp session cleared. Generating a new pairing QR code.'
+        : 'Reconnecting the WhatsApp listener.',
+      reset: result.reset,
+      whatsapp: getWhatsAppState()
+    });
+  } catch (err: any) {
+    eventStream.emit({
+      type: 'error',
+      stage: 'listener',
+      message: `WhatsApp reconnect failed: ${err.message}`
+    });
+    res.status(500).json({ message: `WhatsApp reconnect failed: ${err.message}` });
+  }
 });
 
 // 3. SSE Log Stream endpoint

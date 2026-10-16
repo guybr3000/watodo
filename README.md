@@ -100,6 +100,7 @@ npm run parse:archive
 | --- | --- | --- |
 | `GET` | `/api/status` | Connection and pairing state |
 | `GET` | `/api/qr` | Current pairing QR code |
+| `POST` | `/api/whatsapp/reconnect` | Restart the listener. Body `{"reset": true}` also clears the stored session and issues a new pairing QR code |
 | `GET` | `/api/stream` | SSE feed of live ingest events |
 | `GET` | `/api/kb` | List knowledge base items |
 | `GET` | `/api/kb/item/:slug` | Parsed single item |

@@ -23,6 +23,57 @@ let currentQrCode: string | null = null;
 let currentQrDataUrl: string | null = null;
 let connectionStatus: 'disconnected' | 'connecting' | 'qr_ready' | 'connected' = 'disconnected';
 let targetJid: string | null = null;
+let lastDisconnectReason: string | null = null;
+
+// Reconnect bookkeeping. A pending timer is always cancelled before a new socket is
+// created, so an automatic retry can never race a manual reconnect.
+let reconnectTimer: NodeJS.Timeout | null = null;
+let reconnectAttempts = 0;
+let initInFlight: Promise<WASocket> | null = null;
+
+// Module scoped so deduplication survives a reconnect: a fresh socket replays recent
+// messages, and a per-socket set would re-ingest every one of them.
+const processedMessageIds = new Set<string>();
+
+function cancelPendingReconnect() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
+
+/**
+ * Detach the previous socket before another one replaces it. Without this, every
+ * reconnect left the old socket's listeners subscribed, so a single drop could end up
+ * with several live sockets each scheduling their own reconnects.
+ */
+async function teardownSocket() {
+  const previous = sock;
+  if (!previous) return;
+  sock = null;
+
+  // Drop the listeners first: end() closes the websocket, which would otherwise fire
+  // this socket's own 'connection.update' handler and schedule yet another reconnect.
+  try {
+    previous.ev.removeAllListeners('connection.update');
+    previous.ev.removeAllListeners('creds.update');
+    previous.ev.removeAllListeners('messages.upsert');
+  } catch {}
+
+  try {
+    previous.end(undefined);
+  } catch {}
+}
+
+/**
+ * Wipe the stored pairing credentials. Only ever called with no socket attached,
+ * otherwise a queued 'creds.update' would write the dead session straight back.
+ */
+async function clearStoredCredentials() {
+  await fs.emptyDir(config.authDir);
+  targetJid = null;
+  resetTargetGroupJidCache();
+}
 
 export async function resetWhatsAppTargetChat() {
   targetJid = null;
@@ -37,11 +88,59 @@ export function getWhatsAppState() {
     status: connectionStatus,
     qrDataUrl: currentQrDataUrl,
     targetChatName: config.targetChatName,
-    targetJid
+    targetJid,
+    lastDisconnectReason
   };
 }
 
-export async function initWhatsAppClient() {
+/**
+ * Restart the WhatsApp listener on demand. `reset` also clears the stored credentials,
+ * which forces a fresh pairing QR code — use it to link a different phone, or to
+ * recover a session the phone has already unlinked.
+ */
+export async function reconnectWhatsApp(options: { reset?: boolean } = {}) {
+  const reset = Boolean(options.reset);
+
+  cancelPendingReconnect();
+  reconnectAttempts = 0;
+  await teardownSocket();
+
+  if (reset) {
+    await clearStoredCredentials();
+  }
+
+  currentQrCode = null;
+  currentQrDataUrl = null;
+  lastDisconnectReason = null;
+  connectionStatus = 'connecting';
+
+  eventStream.emit({
+    type: 'info',
+    stage: 'listener',
+    message: reset
+      ? 'Clearing the stored WhatsApp session and requesting a new pairing QR code...'
+      : 'Reconnecting the WhatsApp listener on request...'
+  });
+
+  await initWhatsAppClient();
+  return { reset, status: connectionStatus };
+}
+
+export async function initWhatsAppClient(): Promise<WASocket> {
+  // Collapse overlapping callers (boot, retry timer, manual reconnect) onto one socket.
+  if (initInFlight) return initInFlight;
+  initInFlight = startWhatsAppSocket();
+  try {
+    return await initInFlight;
+  } finally {
+    initInFlight = null;
+  }
+}
+
+async function startWhatsAppSocket(): Promise<WASocket> {
+  cancelPendingReconnect();
+  await teardownSocket();
+
   eventStream.emit({
     type: 'info',
     stage: 'listener',
@@ -50,15 +149,19 @@ export async function initWhatsAppClient() {
 
   const { state, saveCreds } = await useMultiFileAuthState(config.authDir);
 
-  sock = makeWASocket({
+  const activeSock = makeWASocket({
     auth: state,
     printQRInTerminal: false,
     syncFullHistory: false
   });
+  sock = activeSock;
 
-  sock.ev.on('creds.update', saveCreds);
+  activeSock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', async (update) => {
+  activeSock.ev.on('connection.update', async (update) => {
+    // A superseded socket can still emit while it closes; only the live one may act.
+    if (sock !== activeSock) return;
+
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
@@ -88,6 +191,8 @@ export async function initWhatsAppClient() {
       connectionStatus = 'connected';
       currentQrCode = null;
       currentQrDataUrl = null;
+      lastDisconnectReason = null;
+      reconnectAttempts = 0;
 
       eventStream.emit({
         type: 'success',
@@ -95,31 +200,77 @@ export async function initWhatsAppClient() {
         message: 'Successfully connected to WhatsApp Web!'
       });
 
-      if (sock) {
-        targetJid = await findTargetGroupJid(sock);
-      }
+      targetJid = await findTargetGroupJid(activeSock);
     }
 
     if (connection === 'close') {
       connectionStatus = 'disconnected';
-      const shouldReconnect =
-        (lastDisconnect?.error as any)?.output?.statusCode !== DisconnectReason.loggedOut;
+      currentQrCode = null;
+      currentQrDataUrl = null;
+
+      const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
+      const reasonName = DisconnectReason[statusCode as DisconnectReason];
+      lastDisconnectReason =
+        (lastDisconnect?.error as any)?.message ||
+        (reasonName ? `Disconnected (${reasonName})` : 'Connection closed');
+
+      // 401 means the phone unlinked this device, so the saved credentials can never
+      // succeed again. Clear them and come back with a pairing QR code instead of
+      // parking on 'disconnected' with nothing to scan and no way back.
+      if (statusCode === DisconnectReason.loggedOut) {
+        eventStream.emit({
+          type: 'warning',
+          stage: 'listener',
+          message: 'WhatsApp logged this device out. Clearing the stored session and generating a new pairing QR code...'
+        });
+
+        try {
+          await teardownSocket();
+          await clearStoredCredentials();
+          await initWhatsAppClient();
+        } catch (err: any) {
+          eventStream.emit({
+            type: 'error',
+            stage: 'listener',
+            message: `Could not restart WhatsApp pairing: ${err.message}. Use Reconnect in the dashboard to retry.`
+          });
+        }
+        return;
+      }
+
+      // Baileys asks for an immediate socket restart right after a successful pairing.
+      const immediate = statusCode === DisconnectReason.restartRequired;
+      if (!immediate) reconnectAttempts += 1;
+      const delayMs = immediate ? 0 : Math.min(5000 * reconnectAttempts, 60000);
 
       eventStream.emit({
         type: 'warning',
         stage: 'listener',
-        message: `WhatsApp connection closed. Reconnecting: ${shouldReconnect}`
+        message: immediate
+          ? 'WhatsApp requested a socket restart. Reconnecting now...'
+          : `WhatsApp connection closed (${lastDisconnectReason}). Reconnecting in ${Math.round(delayMs / 1000)}s (attempt ${reconnectAttempts}).`
       });
 
-      if (shouldReconnect) {
-        setTimeout(() => initWhatsAppClient(), 5000);
-      }
+      // Replacing the handle without cancelling would leak a timer if this socket
+      // reported 'close' more than once.
+      cancelPendingReconnect();
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        initWhatsAppClient().catch((err: any) => {
+          eventStream.emit({
+            type: 'error',
+            stage: 'listener',
+            message: `WhatsApp reconnect attempt failed: ${err.message}`
+          });
+        });
+      }, delayMs);
     }
   });
 
-const processedMessageIds = new Set<string>();
+  activeSock.ev.on('messages.upsert', async (m) => {
+    // A superseded socket replays recent history as it closes; only the live one ingests.
+    if (sock !== activeSock) return;
 
-  sock.ev.on('messages.upsert', async (m) => {
     // Process both 'notify' and 'append' (self-sent) messages
     if (m.type !== 'notify' && m.type !== 'append') return;
 
@@ -285,7 +436,7 @@ const processedMessageIds = new Set<string>();
     }
   });
 
-  return sock;
+  return activeSock;
 }
 
 import { fetchXPostMetadata } from '../enricher/xEnricher.js';
