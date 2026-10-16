@@ -23,12 +23,26 @@ try {
   }
 } catch {}
 
+function resolveOutputDir(envVal?: string, jsonVal?: string): string {
+  if (envVal) {
+    return path.resolve(process.cwd(), envVal);
+  }
+  if (jsonVal) {
+    // If running on Linux/Docker and jsonVal is a Windows absolute path (e.g. C:\...), ignore it
+    if (process.platform !== 'win32' && /^[a-zA-Z]:\\/.test(jsonVal)) {
+      return path.resolve(process.cwd(), './inbox');
+    }
+    return path.resolve(process.cwd(), jsonVal);
+  }
+  return path.resolve(process.cwd(), './inbox');
+}
+
 export const config: AppConfig = {
   targetChatName: savedConfigJson.targetChatName || process.env.TARGET_CHAT_NAME || 'To Do',
   geminiApiKey: savedConfigJson.geminiApiKey || process.env.GEMINI_API_KEY || '',
   githubToken: savedConfigJson.githubToken || process.env.GITHUB_TOKEN || '',
-  outputDir: path.resolve(process.cwd(), savedConfigJson.outputDir || process.env.OUTPUT_DIR || './inbox'),
-  port: savedConfigJson.port || parseInt(process.env.PORT || '3001', 10),
+  outputDir: resolveOutputDir(process.env.OUTPUT_DIR, savedConfigJson.outputDir),
+  port: parseInt(process.env.PORT || '', 10) || savedConfigJson.port || 3001,
   authDir: path.resolve(process.cwd(), process.env.AUTH_DIR || './auth_info_baileys'),
 };
 

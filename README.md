@@ -83,6 +83,39 @@ into the dashboard importer, or run:
 npm run parse:archive
 ```
 
+## Docker Deployment
+
+You can run Watodo entirely in Docker. Docker Compose handles building the multi-stage image, mounting persistent storage for your WhatsApp credentials and notes, and exposing the web dashboard.
+
+### 1. Configure Environment
+Ensure `.env` exists with your configuration (or copy from `.env.example`):
+```bash
+cp .env.example .env
+```
+
+### 2. Start with Docker Compose
+```bash
+# Start container in background
+docker compose up -d
+
+# Or using npm script
+npm run docker:up
+```
+
+### 3. Pair WhatsApp
+Open `http://localhost:3001` in your browser to view the QR code in the dashboard, or view the terminal QR code via logs:
+```bash
+docker compose logs -f
+```
+Scan the QR code from WhatsApp (**Settings** → **Linked Devices** → **Link a Device**).
+
+### 4. Stopping the Container
+```bash
+docker compose down
+```
+
+> **Data Persistence**: WhatsApp auth credentials (`auth_info_baileys/`) and generated Markdown notes/media (`inbox/`) are mapped as host volumes and persist across container updates.
+
 ## Scripts
 
 | Script | Does |
@@ -93,6 +126,10 @@ npm run parse:archive
 | `npm run build` | Compile TypeScript and build the dashboard |
 | `npm start` | Run the compiled server |
 | `npm run parse:archive` | Import a WhatsApp chat export from disk |
+| `npm run docker:build` | Build the Docker container image |
+| `npm run docker:up` | Launch Watodo in Docker in the background |
+| `npm run docker:down` | Stop and remove Watodo Docker container |
+| `npm run docker:logs` | Stream live Docker container logs |
 
 ## API
 

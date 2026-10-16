@@ -1,0 +1,26 @@
+# Node dependencies & builds
+node_modules
+dist
+dist-ssr
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Git & Antigravity IDE
+.git
+.agents
+.gemini
+
+# Local persistent state and credentials (mounted via volumes)
+auth_info_baileys
+inbox
+.env
+.env.*
+!.env.example
+chat_export_temp
+*.zip
+config.json
+
+# OS files
+.DS_Store
+Thumbs.db

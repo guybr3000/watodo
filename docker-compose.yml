@@ -1,0 +1,31 @@
+services:
+  watodo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: watodo:latest
+    container_name: watodo
+    restart: unless-stopped
+    # Hard memory cap (memswap_limit == mem_limit: no swap) — the Docker Desktop VM is shared with
+    # several other stacks. NODE_OPTIONS keeps V8's heap under it so Node collects garbage under
+    # pressure instead of the kernel killing the container (exit 137).
+    mem_limit: 512m
+    memswap_limit: 512m
+    ports:
+      - "${PORT:-3001}:3001"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=384
+      - PORT=3001
+      - OUTPUT_DIR=/app/inbox
+      - AUTH_DIR=/app/auth_info_baileys
+      - TARGET_CHAT_NAME=${TARGET_CHAT_NAME:-To Do}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    volumes:
+      # Persistent knowledge base Markdown notes & media
+      - ./inbox:/app/inbox
+      # WhatsApp authentication & session cache
+      - ./auth_info_baileys:/app/auth_info_baileys

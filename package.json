@@ -9,7 +9,11 @@
     "dev:ui": "vite --config vite.config.ts",
     "build": "tsc && vite build --config vite.config.ts",
     "start": "node dist/server.js",
-    "parse:archive": "tsx src/scripts/importArchive.ts"
+    "parse:archive": "tsx src/scripts/importArchive.ts",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
   },
   "dependencies": {
     "@google/generative-ai": "^0.14.0",
