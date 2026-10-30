@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "WhatsApp To Do group chat listener, multi-source content enrichment engine, and AI-ready Markdown knowledge base generator",
   "main": "dist/server.js",
+  "engines": {
+    "node": ">=26"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:ui\"",
     "dev:server": "tsx watch src/server.ts",
@@ -35,7 +38,7 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/fs-extra": "^11.0.4",
-    "@types/node": "^20.11.24",
+    "@types/node": "^26.6.6",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^18.2.61",
     "@types/react-dom": "^18.2.19",
